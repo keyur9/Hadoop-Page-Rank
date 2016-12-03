@@ -18,6 +18,14 @@ public class PageRankDriver {
 	
 	public static final double DECAY = 0.85;
 	
+	public static final String MARKER = "ADJ:";
+	public static final String MARKER_NAME = "NAME:";
+	public static final String MARKER_RANK = "RANK:";
+	public static final double MAX_DIFFERENCE = 400;
+	public static final double MAX_OUTPUT = 50;
+	public static final String CACHE_DIR = "s3://pagerank-cs549/cache"; 
+	public static final String CURRENT_PATH = System.getProperty("user.dir");
+	
 	public static void main(String[] args) throws Exception {
 
 		String job = "";
@@ -172,38 +180,66 @@ public class PageRankDriver {
 
 	}
 
-	static void finish(String input, String output, int reducers)
-			throws Exception {
-		System.out.println("Finish Job Started");
-		Job job = Job.getInstance(); // Creates a new Job
-		job.setJarByClass(PageRankDriver.class); // Sets the Driver class
-		job.setNumReduceTasks(reducers); // Sets the number of reducers
-
-		FileInputFormat.addInputPath(job, new Path(input)); // Adds input and output paths
+	static void finish(String input, String output, int reducers) throws Exception {
+		finishJoin(input, output, reducers);
+		deleteDirectory(input); 
+		}
+		static void finishJoin(String input, String output, int reducers)
+		throws Exception {
+			String tempJoinFolder = "tempJoin";
+			System.out.println("Finish Join Job Started");
+			
+			Job job = Job.getInstance(); 
+			
+			job.setJarByClass(PageRankDriver.class); 
+			job.setNumReduceTasks(reducers);
+			
+			FileInputFormat.addInputPath(job, new Path(input)); 
+			FileInputFormat.addInputPath(job, new Path(CACHE_DIR)); 
+			FileOutputFormat.setOutputPath(job, new Path(tempJoinFolder));
+			
+			job.setMapperClass(FinJoinMapper.class); 
+			job.setReducerClass(FinJoinReducer.class);
+			
+			job.setMapOutputKeyClass(Text.class); 
+			job.setMapOutputValueClass(Text.class);
+			
+			job.setOutputKeyClass(Text.class);
+			job.setOutputValueClass(Text.class);
+		
+		if(job.waitForCompletion(true)) {
+		finishCombine(tempJoinFolder, output, reducers);
+		}
+		}
+		static void finishCombine(String input, String output, int reducers)
+		throws Exception {
+		System.out.println("Job end, and Finish Job Started");
+		Job job = Job.getInstance(); 
+		
+		job.setJarByClass(PageRankDriver.class); 
+		job.setNumReduceTasks(reducers); 
+		
+		FileInputFormat.addInputPath(job, new Path(input)); 
 		FileOutputFormat.setOutputPath(job, new Path(output));
-
-		job.setMapperClass(FinMapper.class); // Sets Mapper and Reducer Classes
+		
+		job.setMapperClass(FinMapper.class); 
 		job.setReducerClass(FinReducer.class);
-
-		job.setMapOutputKeyClass(DoubleWritable.class); // Sets Mapper and Reducer output types
+		
+		job.setMapOutputKeyClass(DoubleWritable.class); 
 		job.setMapOutputValueClass(Text.class);
-
+		
 		job.setOutputKeyClass(Text.class);
 		job.setOutputValueClass(Text.class);
-
-		// Prints message on successful completion or error.
-		System.out.print(job.waitForCompletion(true) ? "Finish Job Completed" : "Finish Job Error");
-		// Exits once job finishes.
-		deleteDirectory(input); // Deletes the input directory
-
-	}
-
-	public static void composite(String input, String output, String interim1,
+		System.out.println(job.waitForCompletion(true) ? "Job Completed" : "Error!!");
+		deleteDirectory("tempJoin"); 
+		}
+	
+		public static void composite(String input, String output, String interim1,
 			String interim2, String diff, int reducers) throws Exception {
 		/*
 		 * TODO 
 		 */
-		System.out.println("Your Name (your Stevens id)");
+		System.out.println("Keyur Doshi(10405923");
 		
 		int counter = 0;
 		init(input, interim1, reducers); // Initializes data
@@ -252,7 +288,7 @@ public class PageRankDriver {
 			counter++;
 			finish(interim2, output, reducers);
 			summarizeResult(output);
-		} else // for even i, interim1 is the input directory
+		} else 
 		{
 			deleteDirectory(interim2); // Deletes other directory
 			counter++;
@@ -269,11 +305,10 @@ public class PageRankDriver {
 	 * output file from finish and sorts them in rank descending order.
 	 */
 	static void summarizeResult(String path) throws Exception {
-		Path finpath = new Path(path); // Creates new Path
+		Path finpath = new Path(path); 
 		Configuration conf = new Configuration();
 		FileSystem fs = FileSystem.get(URI.create(path), conf);
 		HashMap<Long, Double> values = new HashMap<Long, Double>(); 
-		// HashMap to store Node, Rank Pairs
 		int size = 0;
 
 		if (fs.exists(finpath)) {
